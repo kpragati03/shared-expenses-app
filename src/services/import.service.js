@@ -2,9 +2,15 @@ const fs = require('fs');
 const csv = require('csv-parser');
 const prisma = require('../config/prisma');
 const expenseRepository = require('../repositories/expense.repository');
-const importReportService = require('./import-report.service'); // Import add kiya
+const importReportService = require('./import-report.service');
 
 class ImportService {
+  /**
+   * Process a CSV file and store expenses in the database
+   * @param {string} filePath 
+   * @param {string} groupId 
+   * @param {string} userId 
+   */
   async processCSV(filePath, groupId, userId) {
     const results = [];
     return new Promise((resolve, reject) => {
@@ -13,13 +19,13 @@ class ImportService {
         .on('data', (row) => results.push(row))
         .on('end', async () => {
           try {
-            // 1. Data clean karo
+            // Clean and parse the raw CSV data
             const cleanedData = this.parseAndClean(results, groupId);
             
-            // 2. Report generate karo (Requirement #6)
+            // Generate an import report to track anomalies
             const reportFileName = importReportService.generateReport(cleanedData);
             
-            // 3. Database mein save karo
+            // Persist the sanitized data to the database
             await expenseRepository.bulkCreateExpenses(cleanedData, groupId);
             
             resolve({ 
@@ -35,18 +41,24 @@ class ImportService {
     });
   }
 
+  /**
+   * Transform and validate raw CSV rows
+   * @param {Array} rows 
+   * @param {string} groupId 
+   */
   parseAndClean(rows, groupId) {
     return rows.map(row => {
-      // Data cleaning logic...
+      // Normalize amount and handle currency formatting
       const amount = parseFloat(String(row.amount).replace(/,/g, '')) || 0;
       
+      // Parse date with fallback for DD-MM-YYYY format
       let date = new Date(row.date);
       if (isNaN(date.getTime())) {
         const [d, m, y] = row.date.split('-');
         date = new Date(`${y}-${m}-${d}`);
       }
       
-      // Anomaly tracking ke liye flag add kiya
+      // Mark as anomaly if critical information is missing or amount is invalid
       const isAnomaly = !row.description || row.amount == 0;
 
       return {
@@ -59,7 +71,7 @@ class ImportService {
         date: date,
         groupId: groupId,
         notes: row.notes || "",
-        isAnomaly: isAnomaly // Report ke liye
+        isAnomaly: isAnomaly
       };
     });
   }
