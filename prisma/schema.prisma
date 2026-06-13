@@ -1,0 +1,266 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SplitType {
+  EQUAL
+  PERCENTAGE
+  SHARE
+  EXACT
+}
+
+enum ImportJobStatus {
+  UPLOADED
+  PROCESSING
+  AWAITING_USER
+  COMPLETED
+  FAILED
+}
+
+enum StagedRecordStatus {
+  PENDING
+  RESOLVED
+  FAILED
+  COMMITTED
+}
+
+enum ActionType {
+  CREATE
+  UPDATE
+  DELETE
+  RESTORE
+  AUTO_FIX
+  USER_RESOLVE
+}
+
+enum ActorType {
+  USER
+  SYSTEM
+  ADMIN
+}
+
+model User {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String   @db.VarChar(255)
+  email           String   @unique @db.VarChar(255)
+  password        String   @db.VarChar(255)
+  defaultCurrency String   @default("INR") @db.VarChar(3)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+  deletedById     String?  @db.Uuid
+
+  groupMemberships GroupMember[]
+  expensesPaid     Expense[]      @relation("ExpensePayer")
+  expenseSplits    ExpenseSplit[]
+  importJobs       ImportJob[]
+  settlementsPaid  Settlement[]   @relation("SettlementPayer")
+  settlementsRcvd  Settlement[]   @relation("SettlementReceiver")
+
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Group {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String   @db.VarChar(255)
+  baseCurrency String   @default("INR") @db.VarChar(3)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+  deletedById  String?  @db.Uuid
+
+  members      GroupMember[]
+  expenses     Expense[]
+  importJobs   ImportJob[]
+  settlements  Settlement[]
+
+  @@index([deletedAt])
+  @@map("groups")
+}
+
+model GroupMember {
+  id        String    @id @default(uuid()) @db.Uuid
+  groupId   String    @db.Uuid
+  userId    String    @db.Uuid
+
+  joinedAt  DateTime  @default(now()) @db.Date
+  leftAt    DateTime? @db.Date
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, userId])
+  @@map("group_members")
+}
+
+model Expense {
+  id                 String    @id @default(uuid()) @db.Uuid
+  groupId            String    @db.Uuid
+  paidById           String    @db.Uuid
+  description        String    @db.Text
+
+  amount             Decimal   @db.Decimal(19, 4)
+  currency           String    @db.VarChar(3)
+  baseCurrencyAmount Decimal   @db.Decimal(19, 4)
+  exchangeRate       Decimal   @default(1.0) @db.Decimal(10, 6)
+  isCustomExchangeRate Boolean @default(false)
+
+  splitType          SplitType
+  transactionDate    DateTime  @db.Date
+  notes              String?   @db.Text
+
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+  deletedById        String?   @db.Uuid
+
+  group              Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  paidBy             User           @relation("ExpensePayer", fields: [paidById], references: [id])
+  splits             ExpenseSplit[]
+
+  @@index([groupId, transactionDate(sort: Desc), id(sort: Desc)])
+  @@index([deletedAt])
+  @@map("expenses")
+}
+
+model ExpenseSplit {
+  id           String   @id @default(uuid()) @db.Uuid
+  expenseId    String   @db.Uuid
+  userId       String   @db.Uuid
+
+  owedAmount   Decimal  @db.Decimal(19, 4)
+
+  percentage   Decimal? @db.Decimal(5, 2)
+  shares       Int?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  expense      Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id])
+
+  @@index([expenseId])
+  @@index([userId, expenseId])
+  @@map("expense_splits")
+}
+
+model Settlement {
+  id              String   @id @default(uuid()) @db.Uuid
+  groupId         String   @db.Uuid
+  paidById        String   @db.Uuid
+  paidToId        String   @db.Uuid
+
+  amount          Decimal  @db.Decimal(19, 4)
+  currency        String   @db.VarChar(3)
+
+  transactionDate DateTime @db.Date
+  notes           String?  @db.Text
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+  deletedById     String?  @db.Uuid
+
+  group           Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  paidBy          User     @relation("SettlementPayer", fields: [paidById], references: [id])
+  paidTo          User     @relation("SettlementReceiver", fields: [paidToId], references: [id])
+
+  @@index([groupId, transactionDate(sort: Desc), id(sort: Desc)])
+  @@index([groupId, paidById, paidToId])
+  @@index([deletedAt])
+  @@map("settlements")
+}
+
+model CurrencyRate {
+  id             String   @id @default(uuid()) @db.Uuid
+  baseCurrency   String   @db.VarChar(3)
+  targetCurrency String   @db.VarChar(3)
+  rate           Decimal  @db.Decimal(10, 6)
+  date           DateTime @db.Date
+
+  createdAt      DateTime @default(now())
+
+  @@unique([baseCurrency, targetCurrency, date])
+  @@map("currency_rates")
+}
+
+model ImportJob {
+  id             String          @id @default(uuid()) @db.Uuid
+  groupId        String          @db.Uuid
+  uploadedById   String          @db.Uuid
+  fileUri        String          @db.Text
+  idempotencyKey String          @unique @db.VarChar(255)
+  fileHash       String          @db.VarChar(64)
+  status         ImportJobStatus @default(UPLOADED)
+  version        Int             @default(1)
+
+  totalRows      Int             @default(0)
+  processedRows  Int             @default(0)
+  failedRows     Int             @default(0)
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  group          Group           @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  uploadedBy     User            @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  stagedExpenses StagedExpense[]
+
+  @@unique([groupId, fileHash])
+  @@index([groupId, status])
+  @@map("import_jobs")
+}
+
+model StagedExpense {
+  id              String             @id @default(uuid()) @db.Uuid
+  jobId           String             @db.Uuid
+
+  transactionDate DateTime?          @db.Date
+  paidByStr       String?            @db.VarChar(255)
+  amount          Decimal?           @db.Decimal(19, 4)
+
+  rawCsvRow       Json
+  parsedData      Json
+  errors          Json?
+
+  status          StagedRecordStatus @default(PENDING)
+
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  job             ImportJob          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, status])
+  @@index([jobId, transactionDate])
+  @@map("staged_expenses")
+}
+
+model AuditLog {
+  id         String     @id @default(uuid()) @db.Uuid
+  entityName String     @db.VarChar(100)
+  entityId   String     @db.Uuid
+  actionType ActionType
+
+  oldValues  Json?
+  newValues  Json?
+
+  actorType  ActorType  @default(USER)
+  actorId    String?    @db.Uuid
+  ipAddress  String?    @db.VarChar(45)
+
+  createdAt  DateTime   @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([entityName, entityId])
+  @@index([actorType, actorId])
+  @@map("audit_logs")
+}
