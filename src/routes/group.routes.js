@@ -4,7 +4,7 @@ const groupController = require('../controllers/group.controller');
 const expenseController = require('../controllers/expense.controller');
 const { protect } = require('../middlewares/auth.middleware');
 
-// Saare group routes protected hain (login zaruri hai)
+// All group routes are protected 
 router.use(protect);
 
 // Group management routes
