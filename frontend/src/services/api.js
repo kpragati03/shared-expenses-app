@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Backend instance configuration
 const API = axios.create({
-  baseURL: 'http://localhost:5000/api', // Agar backend ka port alag hai to 5000 ko change kar lena
+  baseURL: 'http://localhost:3000/api', // Agar backend ka port alag hai to 5000 ko change kar lena
 });
 
 // Request interceptor to attach JWT token dynamically

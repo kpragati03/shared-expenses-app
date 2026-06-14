@@ -19,8 +19,8 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
-// API Routes
-app.use('/api/v1', routes);
+// API Routes - Updated for Frontend compatibility
+app.use('/api', routes);
 
 // 404 Not Found Handler
 app.use((req, res, next) => {
