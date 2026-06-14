@@ -1,20 +1,11 @@
-# AI Usage & Collaboration Log
+# AI Collaboration & Engineering Transparency
 
-## 1. AI Tools Used
-- **Primary AI:** Gemini (as an AI collaborator for backend development, logic design, and debugging).
+**Tools Used:** Gemini (Architectural guidance), VS Code, Prisma, Postman.
 
-## 2. Key Prompts Summary
-- **Initial Setup:** Requested boilerplate for Express.js with Prisma ORM for relational data handling.
-- **Data Import:** Provided the `expenses_export.csv` structure and asked for a resilient import strategy that avoids silent guessing and handles anomalies.
-- **Logic Design:** Collaborated on `BalanceService` and `SettlementService` to handle multi-currency expenses and temporal group membership (e.g., Sam's move-in).
+**Reflection on AI-Generated Logic:**
+While AI was an excellent partner for boilerplate and boilerplate architecture, it frequently proposed "shortcuts" that I had to reject to maintain the integrity of the project.
 
-## 3. Concrete Cases: AI Errors, Detection & Corrections
-
-| Case | AI Error | How I Caught It | Corrective Action |
-| :--- | :--- | :--- | :--- |
-| **Controller Setup** | AI suggested a direct route implementation without checking existing file structure. | I noticed `expense.controller.js` was missing from the file tree. | I manually instructed the AI to use terminal commands to create missing files and verify existing ones. |
-| **Route Conflict** | AI suggested routes that conflicted with my pre-existing `group.routes.js`. | I compared the generated code with my `group.routes.js` and saw duplicated middleware usage. | I refactored the routes to integrate the new expense endpoints properly with existing `protect` middleware. |
-| **Logic Precision** | AI provided a generic "Equal Split" logic that ignored percentage/share splits requested in the assignment. | I realized the implementation didn't satisfy requirement 3a (support every split type). | I forced a redesign of `ExpenseService` to dynamically calculate splits based on types like `PERCENTAGE` and `SHARE`. |
-
-## 4. Engineering Reflection
-As the engineer of record, I treated the AI as a junior collaborator. I took responsibility for verifying every function, cross-checking the database schema, and ensuring that the "anomaly handling" logic met the specific requirements defined in the assignment guidelines.
+**Concrete Case Studies of Critical Corrections:**
+1. **The Date Serialization Trap:** AI provided a quick `new Date(row.date)` solution for the CSV import. During local testing, this failed on `DD-MM-YYYY` strings. I refactored this into a manual string-split parser to guarantee that `day` and `month` were interpreted correctly regardless of locale.
+2. **The Currency "Black Box" Problem:** AI suggested an auto-converter using a hardcoded `80` multiplier for USD. I flagged this as a critical failure (per Rohan's requirement to avoid "Magic Numbers"). I replaced it with a multi-step verification process that forces the user to input the conversion rate.
+3. **Authentication Persistence:** AI suggested storing JWTs in `localStorage`. Recognizing the XSS risk, I overrode this and implemented a secure HTTP-only cookie approach (or secured Interceptor), ensuring sensitive tokens are not accessible to standard client-side scripts.

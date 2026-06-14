@@ -1,25 +1,13 @@
-# Engineering Decisions Log
+# Engineering Decisions Log: Why and How
 
-## 1. Database Selection (Relational DB)
-- **Decision:** Used PostgreSQL with Prisma ORM.
-- [cite_start]**Why:** The assignment requires a relational database[cite: 29]. PostgreSQL provides strong ACID compliance, which is critical for financial transactions and balance tracking. Prisma offers type-safe database access, reducing runtime errors.
+### 1. Relational Database over NoSQL
+I opted for PostgreSQL because financial systems require strong consistency. Using Prisma ORM allowed me to enforce schema constraints at the database level, ensuring that balances cannot be orphaned. NoSQL was considered but rejected due to the risk of data inconsistency in "who-owes-whom" calculations.
 
-## 2. CSV Import Strategy
-- **Decision:** Built a custom streaming CSV parser.
-- [cite_start]**Why:** The requirement forbids manual editing of the CSV[cite: 32]. A streaming approach (`csv-parser`) allows the app to handle large files efficiently without loading the entire content into memory, avoiding server crashes.
+### 2. The "Staging" Architecture
+The core requirement was to handle messy data without crashing. Instead of building a fragile parser that tries to "guess," I built a `StagedExpense` quarantine. This allows the system to be **transparent**. It forces the user to own the data-cleaning process, ensuring 100% accuracy in the balance sheet.
 
-## 3. Handling Split Logic
-- **Decision:** Normalizing all split types to individual `ExpenseSplit` records.
-- [cite_start]**Why:** To satisfy Rohan's requirement ("No magic numbers")[cite: 12], we need granular records to trace exactly which expenses contribute to a balance. This enables full auditability.
+### 3. JWT-Based Stateless Auth
+I chose JWT over session-based auth to keep the API stateless. This design choice enables the backend to scale independently, which is crucial for potential feature expansion into mobile platforms.
 
-## 4. Currency Conversion
-- **Decision:** Normalizing to a base currency (INR) at the time of import.
-- [cite_start]**Why:** Priya's requirement highlighted the inaccuracy of treating USD as INR[cite: 13]. By implementing an exchange rate lookup, we maintain accurate financial reporting regardless of the transaction currency.
-
-## 5. Temporal Membership
-- **Decision:** Filtering expenses based on `GroupMember` join/leave dates.
-- [cite_start]**Why:** Sam's requirement ("Why would March electricity affect my balance?") [cite: 14] necessitates that balances be calculated only against expenses incurred during a member's active period in the group.
-
-## 6. Duplicate Resolution
-- **Decision:** Hash-based duplicate detection.
-- [cite_start]**Why:** To clean up the spreadsheet as requested by Meera[cite: 15], we generate a hash for each row (based on description, amount, and date) to identify and flag duplicates without silent data loss.
+### 4. Client-Side Balance Calculation
+Initially, I considered offloading balance calculations to the database (SQL aggregates), but decided to handle core logic in the Service layer (Node.js). This makes the code **testable**. I can now write unit tests for the math logic without needing to mock complex SQL joins.

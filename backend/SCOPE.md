@@ -1,30 +1,27 @@
-# Scope & Anomaly Log
+# Anomaly Log & System Scope
 
-## 1. Project Overview
-This document logs the data anomalies detected in `expenses_export.csv` and the corresponding handling policies implemented in the Shared Expenses App backend.
+## Database Schema Architecture
+The application utilizes a relational database (PostgreSQL) managed by Prisma ORM. 
+- **Users**: Authentication and profile management.
+- **Groups**: Handles multi-tenant flatmate groups with `joinedAt` and `leftAt` timestamps for temporal membership tracking (Sam's requirement).
+- **Expense**: Stores valid, normalized financial records including `splitType` (EQUAL, PERCENTAGE, SHARE, EXACT).
+- **StagedExpense**: A buffer layer for non-compliant CSV rows. This ensures the app is "fault-tolerant."
+- **ImportJob**: Links batches of imports to specific users, facilitating idempotency and auditability.
 
-## 2. Data Anomaly Log
-| Anomaly Detected | Description | Handling Policy |
-| :--- | :--- | :--- |
-| **Duplicate Entries** | Identical rows for expenses (e.g., "Dinner at Marina Bites"). | Detected via record hashing; the first occurrence is kept, others are logged as duplicates. |
-| **Settlement as Expense** | Debt repayments logged incorrectly in the expenses sheet. | Migrated to the `settlements` table; removed from `expenses` calculation. |
-| **Currency Mismatch** | Mixture of USD and INR in amount fields. | Implemented an exchange rate service to normalize all values to INR. |
-| **Unknown Payer** | "House cleaning supplies" lacks a valid payer. | Flagged as an anomaly; assigned to the 'System/Default' user. |
-| **Inconsistent Split Format** | Mixed comma and semicolon separators in `split_with`. | Normalized all delimiters to semicolons during the CSV parsing stage. |
-| **Missing Notes** | NULL values in the notes column. | Defaulted to an empty string to maintain schema integrity. |
-| **Date Format Variability** | Inconsistent DD-MM-YYYY and YYYY-MM-DD formats. | Parsed using a fallback logic to ensure conversion to ISO Date objects. |
-| **Negative Amounts** | Negative values present in specific rows. | Validated against the requirement; treated as refund transactions. |
-| **Member Movement (Mid-April)** | Expenses logged after a member left the group. | Validation logic checks `leftAt` date of `GroupMember` before committing. |
-| **Rounding Issues** | Excessive decimal points in split calculations. | Enforced 4-decimal point precision (`Decimal(19, 4)`) as per database schema. |
-| **Sam's Move-in** | Expenses dated before Sam's move-in date. | Implemented temporal filtering to exclude pre-membership expenses. |
-| **Trip Expenses** | Currency conversion discrepancies in trip logs. | Applied `isCustomExchangeRate` flag to handle variable trip-based rates. |
+## Detailed Data Anomaly Log & Policies
+The system parses `expenses_export.csv` through a strict Rules Engine. No silent guesses are permitted.
 
-## 3. Database Schema Summary
-The application utilizes a relational PostgreSQL database to ensure data integrity and support complex relationships between Users, Groups, Expenses, and Settlements.
-- **Key Models:** `User`, `Group`, `Expense`, `ExpenseSplit`, `Settlement`.
-- **Relationship Integrity:** Cascade deletes are implemented on `Group` and `Expense` deletions to prevent orphaned records.
-
-## 4. Handling Policies
-- **Data Integrity:** No manual CSV editing is allowed; the importer detects and surfaces all issues.
-- **Reporting:** Every detected anomaly is recorded in the `Import Report` generated upon ingestion.
-- **Transactional Safety:** Imports use database transactions to ensure that if a row fails, the database remains in a consistent state.
+| ID | Issue Found | Technical Detection | Resolution Policy |
+| :--- | :--- | :--- | :--- |
+| 1 | **USD Currency** | `row.currency === 'USD'` | Redirect to `StagedExpense` (Status: AWAITING_USER). User must provide exchange rate. |
+| 2 | **Negative Amounts** | `parseFloat(amount) < 0` | Quarantine row; prevents automated balance corruption. |
+| 3 | **Invalid Date Format** | `Date.parse()` check | `DD-MM-YYYY` normalization; invalid strings trigger system failure alert. |
+| 4 | **Duplicates** | Row Hashing (desc+amt+date) | Redirect to `StagedExpense` for Meera’s manual approval. |
+| 5 | **Missing Split Types** | Fallback validation | Default to 'EQUAL' with an audit log entry. |
+| 6 | **Future Dating** | Date > `new Date()` | Flagged as data error to prevent balance prediction bias. |
+| 7 | **Unauthorized Membership** | Date comparison vs group join date | Expenses logged before/after membership are excluded from user balances. |
+| 8 | **Rounding Precision** | Floating point check | All calculations performed using integer-based logic to avoid rounding drift. |
+| 9 | **Settlements as Expenses** | Regex on description | Automated tag as `PAYMENT` rather than `EXPENSE` if "settlement" keyword found. |
+| 10 | **Missing PaidBy** | Null-check | Defaults to `SYSTEM_USER` and logs an alert. |
+| 11 | **Large Volume Anomalies** | Batch timeout monitor | Transaction roll-back if file exceeds 500 rows to prevent server crash. |
+| 12 | **Illegal Characters** | Encoding check (UTF-8) | Sanitizes special characters in descriptions to prevent SQL injection. |
