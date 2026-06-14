@@ -14,11 +14,14 @@ function Login() {
       setError('');
       const response = await loginUser({ email, password });
       
-      if (response.data?.success) {
-        // Save the authentication token locally
-        localStorage.setItem('token', response.data.token);
-        // Redirect to dashboard after successful authentication
+      // Token safely nikalna
+      const token = response.data?.token || response.data?.data?.token || response.data?.data?.accessToken;
+      
+      if (token) {
+        localStorage.setItem('token', token);
         navigate('/dashboard');
+      } else {
+        setError('Login successful, but token not found in response.');
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid credentials or server error');

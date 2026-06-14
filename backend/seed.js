@@ -1,7 +1,9 @@
-const { PrismaClient } = require('@prisma/client');
+require('dotenv').config();
 const bcrypt = require('bcrypt'); 
 
-const prisma = new PrismaClient();
+// 👇 YAHAN CHANGE KIYA HAI 👇
+// Hum naya PrismaClient banane ki bajaye tere original working connection ko import kar rahe hain
+const prisma = require('./src/config/prisma');
 
 async function main() {
   console.log('Starting database seeding process...');
@@ -51,11 +53,9 @@ async function main() {
 
 main()
   .catch((e) => {
-    // Log any errors that occur during the seeding process
     console.error('❌ Error during database seeding:', e);
     process.exit(1);
   })
   .finally(async () => {
-    // Ensure the database connection is closed safely
     await prisma.$disconnect();
   });

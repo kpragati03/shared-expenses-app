@@ -1,78 +1,78 @@
+const prisma = require('../config/prisma');
 const fs = require('fs');
 const csv = require('csv-parser');
-const prisma = require('../config/prisma');
-const expenseRepository = require('../repositories/expense.repository');
-const importReportService = require('./import-report.service');
 
 class ImportService {
-  /**
-   * Process a CSV file and store expenses in the database
-   * @param {string} filePath 
-   * @param {string} groupId 
-   * @param {string} userId 
-   */
   async processCSV(filePath, groupId, userId) {
-    const results = [];
+    // 1. Master Import Job
+    const importJob = await prisma.importJob.create({
+      data: { groupId, uploadedById: userId, fileUri: filePath, idempotencyKey: Date.now().toString(), fileHash: 'hash-' + Date.now() }
+    });
+
+    const VALID_SPLIT_TYPES = ['EQUAL', 'PERCENTAGE', 'SHARE', 'EXACT'];
+
     return new Promise((resolve, reject) => {
+      const results = [];
+      const anomalies = [];
+
       fs.createReadStream(filePath)
         .pipe(csv())
-        .on('data', (row) => results.push(row))
-        .on('end', async () => {
-          try {
-            // Clean and parse the raw CSV data
-            const cleanedData = this.parseAndClean(results, groupId);
-            
-            // Generate an import report to track anomalies
-            const reportFileName = importReportService.generateReport(cleanedData);
-            
-            // Persist the sanitized data to the database
-            await expenseRepository.bulkCreateExpenses(cleanedData, groupId);
-            
-            resolve({ 
-              success: true, 
-              count: cleanedData.length,
-              report: reportFileName 
+        .on('data', async (row) => {
+          let status = 'PENDING';
+          const errors = [];
+
+          // FIXED: Date Parser
+          const [day, month, year] = row.date.split('-');
+          const isoDate = `${year}-${month}-${day}`;
+
+          // DYNAMIC SPLIT TYPE: CSV se read karo, nahi toh default EQUAL
+          const splitType = VALID_SPLIT_TYPES.includes(row.split_type?.toUpperCase()) 
+            ? row.split_type.toUpperCase() 
+            : 'EQUAL';
+
+          // Rules Engine
+          if (row.currency === 'USD') {
+            errors.push('Currency is USD. Provide exchange rate.');
+            status = 'AWAITING_USER';
+          }
+          if (parseFloat(row.amount) < 0) {
+            errors.push('Negative amount. Verify refund.');
+            status = 'AWAITING_USER';
+          }
+
+          // Anomaly Detection Logic
+          if (errors.length > 0) {
+            anomalies.push(row);
+            await prisma.stagedExpense.create({
+              data: { 
+                jobId: importJob.id, 
+                transactionDate: new Date(isoDate), 
+                amount: parseFloat(row.amount), 
+                rawCsvRow: row, 
+                parsedData: row, 
+                errors: errors, 
+                status: status 
+              }
             });
-          } catch (error) { 
-            reject(error); 
+          } else {
+            results.push(row);
+            // Dynamic splitType yahan use ho raha hai
+            await prisma.expense.create({
+              data: { 
+                groupId, 
+                paidById: userId, 
+                description: row.description, 
+                amount: parseFloat(row.amount), 
+                currency: row.currency, 
+                baseCurrencyAmount: parseFloat(row.amount), 
+                transactionDate: new Date(isoDate), 
+                splitType: splitType 
+              }
+            });
           }
         })
-        .on('error', (error) => reject(error));
-    });
-  }
-
-  /**
-   * Transform and validate raw CSV rows
-   * @param {Array} rows 
-   * @param {string} groupId 
-   */
-  parseAndClean(rows, groupId) {
-    return rows.map(row => {
-      // Normalize amount and handle currency formatting
-      const amount = parseFloat(String(row.amount).replace(/,/g, '')) || 0;
-      
-      // Parse date with fallback for DD-MM-YYYY format
-      let date = new Date(row.date);
-      if (isNaN(date.getTime())) {
-        const [d, m, y] = row.date.split('-');
-        date = new Date(`${y}-${m}-${d}`);
-      }
-      
-      // Mark as anomaly if critical information is missing or amount is invalid
-      const isAnomaly = !row.description || row.amount == 0;
-
-      return {
-        description: row.description || "Untitled Expense",
-        paid_by: row.paid_by || "Unknown",
-        amount: amount,
-        currency: row.currency || "INR",
-        split_type: (row.split_type || "EQUAL").toUpperCase(),
-        split_with: row.split_with || "",
-        date: date,
-        groupId: groupId,
-        notes: row.notes || "",
-        isAnomaly: isAnomaly
-      };
+        .on('end', () => resolve({ jobId: importJob.id, processed: results.length, flagged: anomalies.length }))
+        .on('error', reject);
     });
   }
 }

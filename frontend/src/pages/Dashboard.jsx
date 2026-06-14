@@ -9,18 +9,16 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // Hardcoded default group ID for demonstration and initial setup
-  const defaultGroupId = "group-123";
+  // Yahan asli Database UUID fixed hai
+  const defaultGroupId = "8c847534-fb46-440f-b63a-257ff3d6373a";
 
   useEffect(() => {
-    // Validate user authentication via local storage token
     const token = localStorage.getItem('token');
     if (!token) {
       navigate('/');
       return;
     }
 
-    // Fetch expense records asynchronously from the backend API
     const fetchExpenses = async () => {
       try {
         const response = await getGroupDetails(defaultGroupId);
@@ -37,12 +35,10 @@ function Dashboard() {
     fetchExpenses();
   }, [navigate]);
 
-  // Callback to refresh the dashboard data after a successful CSV import
   const handleUploadSuccess = () => {
     window.location.reload();
   };
 
-  // Securely terminate the user session
   const handleLogout = () => {
     localStorage.removeItem('token');
     navigate('/');
@@ -60,12 +56,10 @@ function Dashboard() {
         </button>
       </div>
 
-      {/* Integrate the CSV upload component */}
       <UploadCSV groupId={defaultGroupId} onUploadSuccess={handleUploadSuccess} />
 
       <hr style={{ margin: '20px 0' }} />
 
-      {/* Conditionally render the data table or a loading indicator */}
       {loading ? (
         <p style={{ textAlign: 'center' }}>Loading expenses...</p>
       ) : (
