@@ -7,6 +7,7 @@ datasource db {
   provider = "postgresql"
 }
 
+// --- ENUMS ---
 enum SplitType {
   EQUAL
   PERCENTAGE
@@ -44,6 +45,7 @@ enum ActorType {
   ADMIN
 }
 
+// --- MODELS ---
 model User {
   id              String   @id @default(uuid()) @db.Uuid
   name            String   @db.VarChar(255)
